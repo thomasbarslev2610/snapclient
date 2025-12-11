@@ -15,5 +15,6 @@
     "--compile-commands-dir=c:\\Users\\thoma\\Documents\\Projects\\Snapcast\\esp32\\snapclient_fork\\snapclient\\build"
   ],
   "idf.flashType": "UART",
-  "idf.portWin": "COM6"
+  "idf.portWin": "COM6",
+  "C_Cpp.dimInactiveRegions": false
 }
