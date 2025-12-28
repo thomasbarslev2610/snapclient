@@ -81,9 +81,10 @@ static esp_err_t SPIFFS_Mount(char *path, char *label, int max_files) {
   }
 
   if (ret == ESP_OK) {
-    ESP_LOGI(TAG, "Mount %s to %s success", path, label);
+    ESP_LOGD(TAG, "Mount %s to %s success", path, label);
     SPIFFS_Directory(path);
   }
+  
 
   return ret;
 }
@@ -110,7 +111,7 @@ static int find_key_value(char *key, char *parameter, char *value) {
     strncpy(value, addr2, length);
     value[length] = 0;
   }
-  //	ESP_LOGI(TAG, "key=[%s] value=[%s]", key, value);
+  	ESP_LOGI(TAG, "key=[%s] value=[%s]", key, value);
   return strlen(value);
 }
 
@@ -207,11 +208,25 @@ static esp_err_t root_get_handler(httpd_req_t *req) {
  * HTTP post handler
  */
 static esp_err_t root_post_handler(httpd_req_t *req) {
-  //	ESP_LOGI(TAG, "root_post_handler req->uri=[%s]", req->uri);
+  ESP_LOGI(TAG, "root_post_handler req->uri=[%s]", req->uri);
   URL_t urlBuf;
   int ret = -1;
 
   memset(&urlBuf, 0, sizeof(URL_t));
+  
+  if(find_key_value("deviceName=", (char *)req->uri, urlBuf.str_value)){
+    ESP_LOGI(TAG, "urlBuf.str_value=[%s]", urlBuf.str_value);
+    
+    //urlBuf.str_deviceName = urlBuf.str_value;
+    strncpy(urlBuf.str_deviceName, urlBuf.str_value, 32);
+  //urlBuf.str_deviceName = "test";
+    ESP_LOGD(TAG, "urlBuf.float_value=%f", urlBuf.str_deviceName);
+    ret = 0;
+
+  } else{
+    ESP_LOGD(TAG, "key 'deviceName=' not found");
+  }
+
 
   if (find_key_value("gain_1=", (char *)req->uri, urlBuf.str_value)) {
     ESP_LOGD(TAG, "urlBuf.str_value=[%s]", urlBuf.str_value);
@@ -252,6 +267,9 @@ static esp_err_t root_post_handler(httpd_req_t *req) {
       ESP_LOGE(TAG, "xQueueSend Fail");
     }
   }
+
+
+
 
   /* Redirect onto root to see the updated file list */
   httpd_resp_set_status(req, "303 See Other");
@@ -336,8 +354,8 @@ static void http_server_task(void *pvParameters) {
     if (xQueueReceive(xQueueHttp, &urlBuf, portMAX_DELAY) == pdTRUE) {
       filterParams_t filterParams;
 
-      ESP_LOGI(TAG, "str_value=%s gain_1=%f, gain_2=%f, gain_3=%f",
-               urlBuf.str_value, urlBuf.gain_1, urlBuf.gain_2, urlBuf.gain_3);
+      ESP_LOGI(TAG, "str_value=%s gain_1=%f, gain_2=%f, gain_3=%f","devicename=%s",
+               urlBuf.str_value, urlBuf.gain_1, urlBuf.gain_2, urlBuf.gain_3, urlBuf.str_deviceName);
 
       filterParams.dspFlow = dspfEQBassTreble;
       filterParams.fc_1 = 300.0;

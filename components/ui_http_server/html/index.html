@@ -1,113 +1,188 @@
-<!DOCTYPE HTML><html>
-<head>
-	<!-- define meta data -->
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<!-- define the style CSS of your page -->
-	<style>
-		html {font-family: Arial; display: inline-block; text-align: center;}
-		h1 {font-size: 2.9rem;}
-		h2 {font-size: 2.1rem;}
-		p {font-size: 1.9rem;}
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Snapcast Client</title>
+    <style>
+   
+      h1 {
+        font-family: Arial, Helvetica, sans-serif;
+        font-weight: bold;
+      }
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      input {
+        background-color: white;
+        margin-left: 1em;
+      }
+      label {
+        color: rgb(27, 0, 94);
+        font-family: Arial, Helvetica, sans-serif;
+        font-weight: bold;
+        margin-left: 1em;
+      }
 
-		.slider {
-				writing-mode: bt-lr; /* IE */
-				-webkit-appearance: slider-vertical; /* Chromium */
-				margin: 14px;
-				width: 15px;
-				height: 200px;
-				border-radius: 5px;
-				background: #39a6de;
-				outline: none;
-				-webkit-transition: .2s;
-				transition: opacity .2s;
-			}
-		.slider::-webkit-slider-thumb 	{
-							-webkit-appearance: none;
-							appearance: none;
-							width: 25px;
-							height: 25px;
-							border-radius: 12px;
-							background: #f74d4d;
-							cursor: pointer;
-						}
-		.slider::-moz-range-thumb 	{
-							width: 25px;
-							height: 25px;
-							border-radius: 12px;
-							background: #F74D4D;
-							cursor: pointer;
-						}
-	</style>
-</head>
-<body>
-	<!-- Displays the range of the slider from -6 to 6 in steps of 0.1 -->
+      .buttonstyled {
+        border: 0;
+        line-height: 2.5;
+        padding: 0 20px;
+        font-size: 1rem;
+        text-align: center;
+        
+        text-shadow: 1px 1px 1px #000;
+        border-radius: 10px;
+        background-color: rgb(27, 114, 114);
+        background-image: linear-gradient(
+          to top left,
+          rgba(0, 0, 0, 0.2),
+          rgba(0, 0, 0, 0.2),
+          rgba(0, 0, 0, 0)
+        );
+        box-shadow: inset 2px 2px 3px rgba(255, 255, 255, 0.6),
+          inset -2px -2px 3px rgba(0, 0, 0, 0.6);
+      }
 
-	<div class="headline_container">
-		<h1>DSP processor filter configuration</h1>
-	</div>
+      .buttonstyled:hover {
+        background-color: rgba(255, 0, 0, 1);
+      }
 
-	<div class="body_container" style="max-width: 500px; margin:0px auto; padding-bottom: 30px;">
-		<div class="range_container">
-			<div class="range_1_container" style="float:left; margin:10px">
-			    <div class="sliders_labels">
-			        <label for="BaseGainSlider">Base</label>
-			    </div>
+      .buttonstyled:active {
+        box-shadow: inset -2px -2px 3px rgba(255, 255, 255, 0.6),
+          inset 2px 2px 3px rgba(0, 0, 0, 0.6);
+      }
+      .setting {
+        background-color: rgb(122, 122, 122);
+        width: 20em;
+        
+        padding-top: 1em;
+        margin-left:1em;
+      }
+      .breaker {
+        background-color: rgb(122, 122, 122);
+        width: 20em;
+        padding-top: 1em;
+        margin-left:1em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Snapcast Client</h1>
+    <!--<form action="/post" method="post" , id="deviceSettings">-->
+      <div class="setting">
+        <label for="deviceName">Device Name:</label><br />
+        <input
+          type="string"
+          id="deviceName"
+          name="deviceName"
+          value="%deviceName_value%"
+        />
+      </div>
+      
+      <div class="setting">
+        <label for="snapCastIP">Snapcast IP:</label><br />
+      
+        <input
+          type="string"
+          id="snapCastIP"
+          name="snapCastIP"
+          value="%snapCastIP_value%"
+        />
+      </div>
+      
+      <div class="setting">
+        <label for="snapCastPort">Snapcast Port:</label><br />
+        <input
+          type="number"
+          id="snapCastPort"
+          name="snapCastPort"
+          value="1234"
+        />
+      </div>
+      
+      <div class="setting">
+        <label for="ssid">SSID:</label><br />
+      
+        <input
+          type="string"
+          id="ssid"
+          name="ssid"
+          value="%ssid_value%"
+        /><br />
+      </div>
+    
+    <div class="setting">
+        <label for="ssidPassword">SSID Password:</label><br />
+        <input
+          type="string"
+          id="ssidPassword"
+          name="ssidPassword    "
+          value="%ssidPassword_value%"
+        /><br />
+      </div>
+     
+    <div class="breaker"></div>
+     <div class="setting">
+        <label for="channel">Channel Configuration</label><br />
+        <input
+            type="radio" id="stereo" name="channel" value="stereo">
+            <label for="stereo">Stereo</label><br>
+       
+        <input 
+            type="radio" id="left" name="channel" value="left">
+            <label for="left">Left</label><br>
+        
+        <input 
+            type="radio" id="right" name="channel" value="right">
+            <label for="right">Right</label><br />
+      </div>
+     <div class="breaker"></div>
 
-			    <div class="sliders_control">
-			        <input id="BaseGainSlider" type="range" orient="vertical" onchange="sendUpdateSlider()" oninput="updateSlider('baseSliderValue', this.value)" min="-6.00" max="6.00" value="0.00" step="0.01" class="slider">
-			    </div>
+      
+    <!--</form>-->
+<br/>
 
-			    <div class="slider_value" style="width: 100px;">
-			    	<span id="baseSliderValue">0.00</span> dB
-			    </div>
-			</div>
 
-			<div class="range_2_container" style="float:left; margin:10px">
-			    <div class="sliders_labels">
-			        <label for="MidGainSlider"">Mids</label>
-			    </div>
 
-			    <div class="sliders_control">
-			        <input id="MidGainSlider" type="range" orient="vertical" onchange="sendUpdateSlider()" oninput="updateSlider('midsSliderValue', this.value)" min="-6.00" max="6.00" value="0.00" step="0.01" class="slider">
-			    </div>
+    <!--<button form="deviceSettings" onclick="sendUpdateConfig()" class="buttonstyled">Save</button>-->
+    <button onclick="sendUpdateConfig()" class="buttonstyled">Save</button>
 
-			    <div class="slider_value" style="width: 100px;">
-			    	<span id="midsSliderValue">0.00</span> dB
-			    </div>
-			</div>
 
-			<div class="range_3_container" style="float:left; margin:10px">
-			    <div class="sliders_labels">
-			        <label for="heightsGainSlider">Heights</label>
-			    </div>
-
-			    <div class="sliders_control">
-			        <input id="heightsGainSlider" type="range" orient="vertical" onchange="sendUpdateSlider()" oninput="updateSlider('heightsSliderValue', this.value)" min="-6.00" max="6.00" value="0.00" step="0.01" class="slider">
-			    </div>
-
-			    <div class="slider_value" style="width: 100px;">
-			    	<span id="heightsSliderValue">0.00</span> dB
-			    </div>
-			</div>
-		</div>
-
+    
 	<script>
-		function sendUpdateSlider() {
-			var gain_1 = document.getElementById('BaseGainSlider').value;
-			var gain_2 = document.getElementById('MidGainSlider').value;
-			var gain_3 = document.getElementById('heightsGainSlider').value;
-
-			console.log(gain_1 + ", " + gain_2 + ", " + gain_3);
-			console.log("/post?gain_1=" + gain_1 + "&gain_2= " + gain_2 + "&gain_3=" + gain_3	);
+		function sendUpdateConfig() {
+      var deviceName = document.getElementById("deviceName").value;
+      var snapCastIP = document.getElementById("snapCastIP").value;
+      var snapCastPort = document.getElementById("snapCastPort").value;
+      var ssid = document.getElementById("ssid").value;
+      var ssidPassword = document.getElementById("ssidPassword").value;
+      var channel = getRadioVal("channel");
+      
+      var postCommand = "/post?deviceName=" + deviceName + 
+                        "&snapCastIP=" + snapCastIP +
+                        "&snapCastPort=" + snapCastPort +
+                        "&ssid=" + ssid +
+                        "&ssidPassword=" + ssidPassword +
+                        "&channel=" + channel;
+			
+			console.log(postCommand);
 			var httpRequest = new XMLHttpRequest();
-			httpRequest.open("POST", "/post?gain_1=" + gain_1 + "&gain_2= " + gain_2 + "&gain_3=" + gain_3, true);
+			httpRequest.open("POST", postCommand , true);
 			httpRequest.send();
 		}
 
-		function updateSlider(id, val) {
-			var output = document.getElementById(id);
-			output.innerHTML = val;
-		}
-	</script>
-</body>
+
+    function getRadioVal(radioName) 
+    {
+      var rads = document.getElementsByName(radioName);
+
+      for(var rad in rads) {
+        if(rads[rad].checked)
+          return rads[rad].value;
+      }
+
+      return null;  
+    }
+
+   </script> 
+  </body>
 </html>

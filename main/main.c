@@ -109,7 +109,7 @@ SemaphoreHandle_t timeSyncSemaphoreHandle = NULL;
 
 SemaphoreHandle_t idCounterSemaphoreHandle = NULL;
 
-#if CONFIG_USE_DSP_PROCESSOR
+/* #if CONFIG_USE_DSP_PROCESSOR
 #if CONFIG_SNAPCLIENT_DSP_FLOW_STEREO
 dspFlows_t dspFlow = dspfStereo;
 #endif
@@ -122,7 +122,7 @@ dspFlows_t dspFlow = dspfBiamp;
 #if CONFIG_SNAPCLIENT_DSP_FLOW_BASS_TREBLE_EQ
 dspFlows_t dspFlow = dspfEQBassTreble;
 #endif
-#endif
+#endif */
 
 typedef struct audioDACdata_s {
   bool mute;

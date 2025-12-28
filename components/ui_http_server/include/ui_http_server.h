@@ -8,12 +8,16 @@ extern "C" {
 void init_http_server_task(void);
 
 typedef struct {
-  char str_value[8];
+  char str_value[32];
   long long_value;
   float gain_1;
   float gain_2;
   float gain_3;
+  char str_deviceName[32];
 } URL_t;
+
+
+
 
 #ifdef __cplusplus
 }
