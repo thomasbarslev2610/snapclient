@@ -182,6 +182,8 @@
     let currentSnapUseMDNS = true;
     let currentSnapHost = '';
     let currentSnapPort = '';
+    let currentRelayGpio = -1;
+    let currentRelayTimeout = 5;
     let needsRestart = false; // Track if device needs restart
     let isDirty = false;
 
@@ -202,7 +204,9 @@
         currentSnapUseMDNS = capabilities.mdns_enabled !== undefined ? capabilities.mdns_enabled : true;
         currentSnapHost = capabilities.server_host || '';
         currentSnapPort = capabilities.server_port || '';
-        
+        currentRelayGpio = capabilities.relay_gpio !== undefined ? capabilities.relay_gpio : -1;
+        currentRelayTimeout = capabilities.relay_timeout_s !== undefined ? capabilities.relay_timeout_s : 5;
+
         renderUI();
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -253,7 +257,26 @@
       html += '</div>';
       html += '</div>'; // .setting-control.setting-section
       html += '</div>';
-      
+
+      // Relay / Activity output section
+      html += '<div class="setting-control setting-section">';
+      html += '<label>Relay &amp; Activity Output</label>';
+      html += '<div class="description">Controls a GPIO relay (and the built-in RGB LED) based on Snapcast playback activity.</div>';
+
+      html += '<label for="relay-gpio">Relay GPIO pin (-1 to disable)</label>';
+      html += `<input type="number" id="relay-gpio" value="${escapeHtml(String(currentRelayGpio))}" min="-1" max="50" style="width:120px;padding:8px 10px;font-size:15px;border:1px solid #ccc;border-radius:4px;" oninput="handleRelayChange()">`;
+      html += '<div style="height:12px"></div>';
+
+      html += '<label for="relay-timeout">Inactivity timeout (seconds)</label>';
+      html += `<input type="number" id="relay-timeout" value="${escapeHtml(String(currentRelayTimeout))}" min="1" max="3600" style="width:120px;padding:8px 10px;font-size:15px;border:1px solid #ccc;border-radius:4px;" oninput="handleRelayChange()">`;
+      html += '<div class="description" style="margin-top:6px;">After playback stops, the relay stays HIGH for this many seconds before going LOW.</div>';
+
+      html += '<div class="button-group">';
+      html += '<button class="btn btn-primary" id="save-relay-btn" onclick="saveRelaySettings()" disabled>Save Changes</button>';
+      html += '<button class="btn btn-danger" id="restart-btn-relay" onclick="requestRestart()" style="background-color:#e74c3c;" disabled>Restart</button>';
+      html += '</div>';
+      html += '</div>';
+
       // Info message
       html += '<div class="info">';
       html += '<strong>Note:</strong> After changing the settings, you will need to restart the device for the changes to take effect.';
@@ -352,16 +375,10 @@
     }
 
     function updateRestartButton() {
-      // Enable/disable restart buttons based on needsRestart flag
-      // This flag is only set by successful save operations
-      const restartBtnHostname = document.getElementById('restart-btn-hostname');
-      if (restartBtnHostname) {
-        restartBtnHostname.disabled = !needsRestart;
-      }
-      const restartBtnSnap = document.getElementById('restart-btn-snap');
-      if (restartBtnSnap) {
-        restartBtnSnap.disabled = !needsRestart;
-      }
+      ['restart-btn-hostname', 'restart-btn-snap', 'restart-btn-relay'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = !needsRestart;
+      });
     }
 
     function requestRestart() {
@@ -515,6 +532,49 @@
         console.error('Error clearing hostname:', error);
         alert('Failed to clear hostname. Please try again.');
       });
+    }
+
+    function handleRelayChange() {
+      const saveBtn = document.getElementById('save-relay-btn');
+      const gpio = parseInt(document.getElementById('relay-gpio').value, 10);
+      const tout = parseInt(document.getElementById('relay-timeout').value, 10);
+      const changed = (gpio !== currentRelayGpio) || (tout !== currentRelayTimeout);
+      saveBtn.disabled = !changed || isNaN(gpio) || isNaN(tout) || tout < 1;
+    }
+
+    async function saveRelaySettings() {
+      const saveBtn = document.getElementById('save-relay-btn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      const gpio = parseInt(document.getElementById('relay-gpio').value, 10);
+      const tout = parseInt(document.getElementById('relay-timeout').value, 10);
+
+      try {
+        const r1 = await setParameter('relay_gpio', String(gpio));
+        if (!r1) throw new Error('Failed to save relay GPIO');
+        const r2 = await setParameter('relay_timeout_s', String(tout));
+        if (!r2) throw new Error('Failed to save timeout');
+
+        currentRelayGpio    = gpio;
+        currentRelayTimeout = tout;
+        needsRestart = true;
+        updateRestartButton();
+
+        const app = document.getElementById('app');
+        const ok = document.createElement('div');
+        ok.className = 'success';
+        ok.textContent = 'Relay settings saved. Restart the device for changes to take effect.';
+        app.insertBefore(ok, app.firstChild);
+        setTimeout(() => ok.remove(), 5000);
+
+        saveBtn.textContent = 'Save Changes';
+        document.getElementById('restart-btn-relay').disabled = false;
+      } catch (err) {
+        alert(err.message || 'Failed to save relay settings');
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Changes';
+      }
     }
 
     // Initialize on page load

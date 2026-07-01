@@ -23,6 +23,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "settings_manager.h"
+#include "wifi_interface.h"
 
 #if CONFIG_DAC_TAS5805M
 #include "tas5805m_settings.h"
@@ -51,6 +52,8 @@ extern const uint8_t dac_settings_html_start[] asm("_binary_dac_settings_html_st
 extern const uint8_t dac_settings_html_end[] asm("_binary_dac_settings_html_end");
 extern const uint8_t eq_settings_html_start[] asm("_binary_eq_settings_html_start");
 extern const uint8_t eq_settings_html_end[] asm("_binary_eq_settings_html_end");
+extern const uint8_t wifi_settings_html_start[] asm("_binary_wifi_settings_html_start");
+extern const uint8_t wifi_settings_html_end[] asm("_binary_wifi_settings_html_end");
 extern const uint8_t favicon_ico_start[] asm("_binary_favicon_ico_start");
 extern const uint8_t favicon_ico_end[] asm("_binary_favicon_ico_end");
 
@@ -72,6 +75,7 @@ static const embedded_file_t embedded_files[] = {
 	{"/dsp-settings.html", dsp_settings_html_start, dsp_settings_html_end, "text/html; charset=utf-8"},
 	{"/dac-settings.html", dac_settings_html_start, dac_settings_html_end, "text/html; charset=utf-8"},
 	{"/eq-settings.html", eq_settings_html_start, eq_settings_html_end, "text/html; charset=utf-8"},
+	{"/wifi-settings.html", wifi_settings_html_start, wifi_settings_html_end, "text/html; charset=utf-8"},
 	{"/favicon.ico", favicon_ico_start, favicon_ico_end, "image/x-icon"},
 };
 
@@ -168,7 +172,7 @@ static esp_err_t root_post_handler(httpd_req_t *req) {
 	URL_t urlBuf;
 	int ret = -1;
 	char param[16] = {0};
-	char valstr[64] = {0}; // Increased size for hostname
+	char valstr[128] = {0};
 
 	set_cors_headers(req);
 
@@ -233,6 +237,65 @@ static esp_err_t root_post_handler(httpd_req_t *req) {
 			long v = strtol(valstr, NULL, 10);
 			ESP_LOGI(TAG, "%s: Setting snapserver_port to: %ld", __func__, v);
 			if (settings_set_server_port((int32_t)v) == ESP_OK) {
+				httpd_resp_set_status(req, "200 OK");
+				httpd_resp_sendstr(req, "ok");
+			} else {
+				httpd_resp_set_status(req, "500 Internal Server Error");
+				httpd_resp_sendstr(req, "error");
+			}
+			return ESP_OK;
+		}
+
+		// Relay GPIO pin (integer)
+		if (strcmp(param, "relay_gpio") == 0) {
+			long v = strtol(valstr, NULL, 10);
+			ESP_LOGI(TAG, "%s: Setting relay_gpio to: %ld", __func__, v);
+			if (settings_set_relay_gpio((int32_t)v) == ESP_OK) {
+				httpd_resp_set_status(req, "200 OK");
+				httpd_resp_sendstr(req, "ok");
+			} else {
+				httpd_resp_set_status(req, "500 Internal Server Error");
+				httpd_resp_sendstr(req, "error");
+			}
+			return ESP_OK;
+		}
+
+		// Relay inactivity timeout (integer seconds)
+		if (strcmp(param, "relay_timeout_s") == 0) {
+			long v = strtol(valstr, NULL, 10);
+			if (v < 1) v = 1;
+			ESP_LOGI(TAG, "%s: Setting relay_timeout_s to: %ld", __func__, v);
+			if (settings_set_relay_timeout_s((int32_t)v) == ESP_OK) {
+				httpd_resp_set_status(req, "200 OK");
+				httpd_resp_sendstr(req, "ok");
+			} else {
+				httpd_resp_set_status(req, "500 Internal Server Error");
+				httpd_resp_sendstr(req, "error");
+			}
+			return ESP_OK;
+		}
+
+		// Special handling for wifi_ssid (string, up to 32 bytes)
+		if (strcmp(param, "wifi_ssid") == 0) {
+			char decoded_ssid[33] = {0};
+			url_decode(decoded_ssid, valstr, sizeof(decoded_ssid));
+			ESP_LOGI(TAG, "%s: Setting wifi_ssid to: %s", __func__, decoded_ssid);
+			if (settings_set_wifi_ssid(decoded_ssid) == ESP_OK) {
+				httpd_resp_set_status(req, "200 OK");
+				httpd_resp_sendstr(req, "ok");
+			} else {
+				httpd_resp_set_status(req, "500 Internal Server Error");
+				httpd_resp_sendstr(req, "error");
+			}
+			return ESP_OK;
+		}
+
+		// Special handling for wifi_password (string, up to 64 bytes)
+		if (strcmp(param, "wifi_password") == 0) {
+			char decoded_pwd[65] = {0};
+			url_decode(decoded_pwd, valstr, sizeof(decoded_pwd));
+			ESP_LOGI(TAG, "%s: Setting wifi_password", __func__);
+			if (settings_set_wifi_password(decoded_pwd) == ESP_OK) {
 				httpd_resp_set_status(req, "200 OK");
 				httpd_resp_sendstr(req, "ok");
 			} else {
@@ -431,6 +494,37 @@ static esp_err_t get_param_handler(httpd_req_t *req) {
 				ESP_LOGD(TAG, "%s: snapserver_port not found, returning empty",
 						 __func__);
 			}
+			return ESP_OK;
+		}
+
+		if (strcmp(param, "wifi_ssid") == 0) {
+			char ssid[33] = {0};
+			settings_get_wifi_ssid(ssid, sizeof(ssid));
+			httpd_resp_set_status(req, "200 OK");
+			httpd_resp_set_type(req, "text/plain");
+			httpd_resp_sendstr(req, ssid);
+			return ESP_OK;
+		}
+
+		if (strcmp(param, "relay_gpio") == 0) {
+			int32_t v = -1;
+			settings_get_relay_gpio(&v);
+			char resp[12];
+			snprintf(resp, sizeof(resp), "%d", (int)v);
+			httpd_resp_set_status(req, "200 OK");
+			httpd_resp_set_type(req, "text/plain");
+			httpd_resp_sendstr(req, resp);
+			return ESP_OK;
+		}
+
+		if (strcmp(param, "relay_timeout_s") == 0) {
+			int32_t v = 5;
+			settings_get_relay_timeout_s(&v);
+			char resp[12];
+			snprintf(resp, sizeof(resp), "%d", (int)v);
+			httpd_resp_set_status(req, "200 OK");
+			httpd_resp_set_type(req, "text/plain");
+			httpd_resp_sendstr(req, resp);
 			return ESP_OK;
 	}
 
@@ -973,6 +1067,37 @@ static esp_err_t options_handler(httpd_req_t *req) {
 	return ESP_OK;
 }
 
+/*
+ * GET /api/wifi/status handler
+ * Returns WiFi mode, AP SSID (if in AP mode), and stored SSID
+ */
+static esp_err_t get_wifi_status_handler(httpd_req_t *req) {
+	ESP_LOGD(TAG, "%s: uri=%s", __func__, req->uri);
+	set_cors_headers(req);
+
+	char ssid[33] = {0};
+	settings_get_wifi_ssid(ssid, sizeof(ssid));
+
+	bool ap_mode = wifi_is_ap_mode();
+	char ap_ssid[33] = {0};
+	if (ap_mode) {
+		wifi_get_ap_ssid(ap_ssid, sizeof(ap_ssid));
+	}
+
+	char json[256] = {0};
+	snprintf(json, sizeof(json),
+	         "{\"mode\":\"%s\",\"ap_ssid\":\"%s\",\"ssid\":\"%s\",\"connected\":%s}",
+	         ap_mode ? "ap" : "sta",
+	         ap_ssid,
+	         ssid,
+	         ap_mode ? "false" : "true");
+
+	httpd_resp_set_status(req, "200 OK");
+	httpd_resp_set_type(req, "application/json");
+	httpd_resp_sendstr(req, json);
+	return ESP_OK;
+}
+
 /**
  */
 esp_err_t stop_server(void) {
@@ -1177,6 +1302,21 @@ esp_err_t start_server(const char *base_path, int port) {
 	httpd_register_uri_handler(server, &_options_eq_schema_handler);
 #endif /* CONFIG_DAC_TAS5805M */
 
+	/* URI handlers for WiFi status API */
+	httpd_uri_t _get_wifi_status_handler = {
+		.uri = "/api/wifi/status",
+		.method = HTTP_GET,
+		.handler = get_wifi_status_handler,
+	};
+	httpd_register_uri_handler(server, &_get_wifi_status_handler);
+
+	httpd_uri_t _options_wifi_status_handler = {
+		.uri = "/api/wifi/status",
+		.method = HTTP_OPTIONS,
+		.handler = options_handler,
+	};
+	httpd_register_uri_handler(server, &_options_wifi_status_handler);
+
 	/* URI handler for static files (catch-all, must be last) */
 	httpd_uri_t _static_file_handler = {
 		.uri = "/*",
@@ -1266,7 +1406,15 @@ static void http_server_task(void *pvParameters) {
 		} else if (strcmp(urlBuf.key, "gain_3") == 0) {
 			current_params.gain_3 = (float)urlBuf.int_value;
 			param_recognized = true;
+		} else if (strcmp(urlBuf.key, "chan_sel") == 0){
+			
+			//ESP_LOGW(TAG, "%s: Channel select: %d", __func__, (int) urlBuf.int_value);
+			current_params.chan_sel = (int) urlBuf.int_value;
+			param_recognized = true;
 		}
+
+		
+		
 
 		if (!param_recognized) {
 			ESP_LOGW(TAG, "%s: Unknown param '%s' received, ignoring",
@@ -1293,8 +1441,16 @@ static void http_server_task(void *pvParameters) {
 			save_params.fc_3 = (float)urlBuf.int_value;
 		} else if (strcmp(urlBuf.key, "gain_3") == 0) {
 			save_params.gain_3 = (float)urlBuf.int_value;
+		} else if (strcmp(urlBuf.key, "chan_sel") == 0) {
+			save_params.chan_sel = (int)urlBuf.int_value;
+			
+			//ESP_LOGW(TAG, "Should save Channel select: %d", (int) urlBuf.int_value);
+			
+			
 		}
-		
+
+		//ESP_LOGW(TAG, "Should save %s : %d", urlBuf.key,  (int) urlBuf.int_value);
+
 		// Update our cached params if this is the current flow
 		if (save_flow == active_flow) {
 			current_params = save_params;

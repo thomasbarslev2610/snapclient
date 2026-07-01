@@ -570,10 +570,13 @@ int start_player(snapcastSetting_t *setting) {
 
   ESP_LOGI(TAG, "Start player_task");
 
-  xTaskCreatePinnedToCore(player_task, "player", 2048 + 512, NULL,
+  /* xTaskCreatePinnedToCore(player_task, "player", 2048 + 512, NULL,
                           SYNC_TASK_PRIORITY, &playerTaskHandle,
                           SYNC_TASK_CORE_ID);
-
+ */
+  xTaskCreatePinnedToCore(player_task, "player", 16*1024, NULL,
+                          SYNC_TASK_PRIORITY, &playerTaskHandle,
+                          SYNC_TASK_CORE_ID);
 
   ESP_LOGI(TAG, "start player done");
 

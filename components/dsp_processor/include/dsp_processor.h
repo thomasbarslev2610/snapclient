@@ -29,6 +29,11 @@ int dsp_processor_worker(void *pcmChnk, const void *scSet);
 esp_err_t dsp_processor_update_filter_params(filterParams_t *params);
 
 void dsp_processor_set_volome(double volume);
+void biamp_lowpass_set_volume(float gain);
+static float biamp_lowpass_volume = 1.0; 
+
+void biamp_highpass_set_volume(float gain);
+static float biamp_highpass_volume = 1.0; 
 
 /**
  * Set parameters for a specific flow (without switching to it)

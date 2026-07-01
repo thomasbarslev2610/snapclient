@@ -16,9 +16,12 @@
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/portmacro.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "network_interface.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
@@ -71,10 +74,17 @@ static char mac_address[18];
 static int s_retry_num = 0;
 
 static esp_netif_t *esp_wifi_netif = NULL;
+static esp_netif_t *esp_wifi_ap_netif = NULL;
 
 static esp_netif_ip_info_t ip_info = {{0}, {0}, {0}};
 static bool connected = false;
+static bool s_ap_mode = false;
+static char s_ap_ssid[33] = {0};
 static SemaphoreHandle_t connIpSemaphoreHandle = NULL;
+
+static EventGroupHandle_t s_wifi_event_group = NULL;
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
 
 /* The event group allows multiple bits for each event,
    but we only care about one event - are we connected
@@ -84,9 +94,14 @@ static SemaphoreHandle_t connIpSemaphoreHandle = NULL;
 static void event_handler(void *arg, esp_event_base_t event_base, int event_id,
                           void *event_data) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-    esp_wifi_connect();
+    if (!s_ap_mode) {
+      esp_wifi_connect();
+    }
   } else if (event_base == WIFI_EVENT &&
              event_id == WIFI_EVENT_STA_DISCONNECTED) {
+    if (s_ap_mode) {
+      return; // ignore STA events once we've switched to AP mode
+    }
     if ((s_retry_num < WIFI_MAXIMUM_RETRY) || (WIFI_MAXIMUM_RETRY == 0)) {
       xSemaphoreTake(connIpSemaphoreHandle, portMAX_DELAY);
       connected = false;
@@ -95,6 +110,8 @@ static void event_handler(void *arg, esp_event_base_t event_base, int event_id,
       esp_wifi_connect();
       s_retry_num++;
       ESP_LOGV(TAG, "retry to connect to the AP");
+    } else if (s_wifi_event_group) {
+      xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
     }
 
     ESP_LOGV(TAG, "connect to the AP fail");
@@ -140,6 +157,9 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
   ESP_LOGI(TAG, "~~~~~~~~~~~");
 
   s_retry_num = 0;
+  if (s_wifi_event_group) {
+    xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+  }
 }
 
 static void lost_ip_event_handler(void *arg, esp_event_base_t event_base,
@@ -160,6 +180,80 @@ static void lost_ip_event_handler(void *arg, esp_event_base_t event_base,
   xSemaphoreGive(connIpSemaphoreHandle);
 
   ESP_LOGI(TAG, "Wifi Lost IP Address");
+}
+
+bool wifi_is_ap_mode(void) {
+  return s_ap_mode;
+}
+
+void wifi_get_ap_ssid(char *ssid_out, size_t max_len) {
+  if (ssid_out && max_len > 0) {
+    strncpy(ssid_out, s_ap_ssid, max_len - 1);
+    ssid_out[max_len - 1] = '\0';
+  }
+}
+
+/* Load WiFi credentials stored in NVS by settings_manager */
+static void load_wifi_credentials_nvs(char *ssid, size_t ssid_len,
+                                       char *password, size_t pwd_len) {
+  nvs_handle_t h;
+  if (nvs_open("snapclient", NVS_READONLY, &h) != ESP_OK) {
+    return;
+  }
+  size_t l = ssid_len;
+  if (nvs_get_str(h, "wifi_ssid", ssid, &l) != ESP_OK) {
+    ssid[0] = '\0';
+  }
+  l = pwd_len;
+  if (nvs_get_str(h, "wifi_pswd", password, &l) != ESP_OK) {
+    password[0] = '\0';
+  }
+  nvs_close(h);
+}
+
+static void start_ap_mode(void) {
+  xSemaphoreTake(connIpSemaphoreHandle, portMAX_DELAY);
+  s_ap_mode = true;
+  xSemaphoreGive(connIpSemaphoreHandle);
+
+  uint8_t mac[6];
+  esp_wifi_get_mac(WIFI_IF_STA, mac);
+  snprintf(s_ap_ssid, sizeof(s_ap_ssid), "ESP32-Snap-%02X%02X%02X",
+           mac[3], mac[4], mac[5]);
+
+  esp_wifi_stop();
+
+  if (!esp_wifi_ap_netif) {
+    esp_wifi_ap_netif = esp_netif_create_default_wifi_ap();
+  }
+
+  wifi_config_t ap_config = {0};
+  strncpy((char *)ap_config.ap.ssid, s_ap_ssid, sizeof(ap_config.ap.ssid) - 1);
+  ap_config.ap.ssid_len = (uint8_t)strlen(s_ap_ssid);
+  ap_config.ap.channel = 1;
+  ap_config.ap.max_connection = 4;
+  ap_config.ap.authmode = WIFI_AUTH_OPEN;
+
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+  ESP_ERROR_CHECK(esp_wifi_start());
+
+  ESP_LOGI(TAG, "AP mode active: SSID=\"%s\", connect then open http://192.168.4.1:%d",
+           s_ap_ssid, CONFIG_WEB_PORT);
+}
+
+static void wifi_ap_fallback_task(void *pv) {
+  EventBits_t bits = xEventGroupWaitBits(
+      s_wifi_event_group,
+      WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+      pdFALSE, pdFALSE,
+      portMAX_DELAY);
+
+  if (bits & WIFI_FAIL_BIT) {
+    ESP_LOGW(TAG, "STA connection failed after max retries, switching to AP mode");
+    start_ap_mode();
+  }
+  vTaskDelete(NULL);
 }
 
 /**
@@ -240,16 +334,37 @@ void wifi_start(void) {
   }
 #endif
 #else
+  // Load credentials: NVS first, fall back to compile-time config
+  char sta_ssid[33] = {0};
+  char sta_password[65] = {0};
+  load_wifi_credentials_nvs(sta_ssid, sizeof(sta_ssid),
+                             sta_password, sizeof(sta_password));
+
+  if (sta_ssid[0] == '\0') {
+    strncpy(sta_ssid, WIFI_SSID, sizeof(sta_ssid) - 1);
+    strncpy(sta_password, WIFI_PASSWORD, sizeof(sta_password) - 1);
+    ESP_LOGI(TAG, "No NVS WiFi credentials, using compiled-in SSID: %s", sta_ssid);
+  } else {
+    ESP_LOGI(TAG, "Loaded WiFi credentials from NVS, SSID: %s", sta_ssid);
+  }
+
+  // Create event group before starting WiFi so handlers can set bits immediately
+  if (WIFI_MAXIMUM_RETRY > 0 && !s_wifi_event_group) {
+    s_wifi_event_group = xEventGroupCreate();
+  }
+
   wifi_config_t wifi_config = {
       .sta =
           {
-              .ssid = WIFI_SSID,
-              .password = WIFI_PASSWORD,
               .sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
               .threshold.authmode = WIFI_MIN_AUTHTYPE,
               .pmf_cfg = {.capable = true, .required = false},
           },
   };
+  strncpy((char *)wifi_config.sta.ssid, sta_ssid,
+          sizeof(wifi_config.sta.ssid) - 1);
+  strncpy((char *)wifi_config.sta.password, sta_password,
+          sizeof(wifi_config.sta.password) - 1);
 
   /* Start Wi-Fi station */
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
@@ -264,7 +379,11 @@ void wifi_start(void) {
 
   ESP_ERROR_CHECK(esp_wifi_start());
 
-  ESP_LOGI(TAG, "wifi_init_sta finished. Trying to connect to %s",
-           wifi_config.sta.ssid);
+  ESP_LOGI(TAG, "wifi_init_sta finished. Trying to connect to %s", sta_ssid);
+
+  // Start AP fallback task – waits for WIFI_FAIL_BIT and switches to AP mode
+  if (WIFI_MAXIMUM_RETRY > 0 && s_wifi_event_group) {
+    xTaskCreate(wifi_ap_fallback_task, "wifi_ap_fb", 4096, NULL, 5, NULL);
+  }
 #endif
 }

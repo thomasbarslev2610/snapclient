@@ -72,6 +72,18 @@ esp_err_t settings_get_json(char *json_out, size_t max_len);
  */
 esp_err_t settings_set_from_json(const char *json_in);
 
+/* WiFi credentials */
+esp_err_t settings_get_wifi_ssid(char *ssid, size_t max_len);
+esp_err_t settings_set_wifi_ssid(const char *ssid);
+esp_err_t settings_get_wifi_password(char *password, size_t max_len);
+esp_err_t settings_set_wifi_password(const char *password);
+
+/* Relay / activity output */
+esp_err_t settings_get_relay_gpio(int32_t *gpio);       /* -1 = disabled */
+esp_err_t settings_set_relay_gpio(int32_t gpio);
+esp_err_t settings_get_relay_timeout_s(int32_t *timeout_s); /* seconds, default 5 */
+esp_err_t settings_set_relay_timeout_s(int32_t timeout_s);
+
 #ifdef __cplusplus
 }
 #endif

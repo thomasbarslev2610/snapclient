@@ -1,0 +1,11 @@
+menu "Activity Timer / Relay"
+
+    config ACTIVITYTIMER_LED_GPIO
+        int "Built-in RGB LED GPIO number (-1 to disable)"
+        default 48
+        help
+            GPIO number connected to the WS2812 (NeoPixel) RGB LED.
+            ESP32-S3-DevKitC-1: GPIO 48
+            Set to -1 to disable LED control.
+
+endmenu

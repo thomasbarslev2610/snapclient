@@ -62,8 +62,8 @@ esp_err_t dsp_settings_init(void) {
 				if (e != ESP_OK) {
 					ESP_LOGW(TAG, "%s: Failed to apply params for flow %d: %s", __func__, f, esp_err_to_name(e));
 				} else {
-					ESP_LOGD(TAG, "%s: Restored params for flow %d: fc_1=%.2f gain_1=%.2f fc_3=%.2f gain_3=%.2f", 
-						__func__, f, params.fc_1, params.gain_1, params.fc_3, params.gain_3);
+					ESP_LOGI(TAG, "%s: Restored params for flow %d: fc_1=%.2f gain_1=%.2f fc_3=%.2f gain_3=%.2f chan_sel=%d", 
+						__func__, f, params.fc_1, params.gain_1, params.fc_3, params.gain_3, params.chan_sel);
 				}
 			} else {
 				ESP_LOGD(TAG, "%s: No stored params for flow %d", __func__, f);
@@ -157,7 +157,7 @@ esp_err_t dsp_settings_load_active_flow(dspFlows_t *flow) {
 
 esp_err_t dsp_settings_save_flow_param(dspFlows_t flow, const char *param_name,
 									   int32_t value) {
-	ESP_LOGD(TAG, "%s: flow=%d param=%s value=%d", __func__, (int)flow,
+	ESP_LOGW(TAG, "%s: flow=%d param=%s value=%d", __func__, (int)flow,
 			 param_name, (int)value);
 
 	if (!param_name)
@@ -258,6 +258,9 @@ esp_err_t dsp_settings_get_json(char *json_out, size_t max_len) {
 	(void)dsp_settings_load_active_flow(&active_flow);
 	cJSON_AddNumberToObject(root, "active_flow", (int)active_flow);
 
+	//Add channel-select
+	//cJSON_AddNumberToObject(root, "chan_sel" , 1 );
+
 	// Add flow schema with current values
 	cJSON *schema = cJSON_CreateArray();
 	if (!schema) {
@@ -283,7 +286,13 @@ esp_err_t dsp_settings_get_json(char *json_out, size_t max_len) {
 		eq, "description",
 		"Simple 2-band equalizer with bass and treble controls");
 	cJSON_AddNumberToObject(eq, "enum_value", 5);
+	
+	int32_t val_eqbt_chan = 0;
+	dsp_settings_load_flow_param(dspfEQBassTreble, "chan_sel", &val_eqbt_chan);
+	cJSON_AddNumberToObject(eq, "chan_sel" , val_eqbt_chan);
 	cJSON *eq_params = cJSON_CreateArray();
+
+
 
 	// Bass frequency
 	cJSON *p1 = cJSON_CreateObject();
@@ -351,6 +360,11 @@ esp_err_t dsp_settings_get_json(char *json_out, size_t max_len) {
 	cJSON_AddStringToObject(boost, "description",
 							"Adjustable bass enhancement");
 	cJSON_AddNumberToObject(boost, "enum_value", 4);
+	
+	int32_t boostval__chan = 0;
+	dsp_settings_load_flow_param(dspfBassBoost, "chan_sel", &boostval__chan);
+	cJSON_AddNumberToObject(boost, "chan_sel" , boostval__chan);
+
 	cJSON *boost_params = cJSON_CreateArray();
 
 	cJSON *bp1 = cJSON_CreateObject();
@@ -389,6 +403,12 @@ esp_err_t dsp_settings_get_json(char *json_out, size_t max_len) {
 	cJSON_AddStringToObject(biamp, "description",
 							"Channel 0: Low-pass, Channel 1: High-pass");
 	cJSON_AddNumberToObject(biamp, "enum_value", 1);
+	
+	int32_t val_bi_chan = 0;
+	dsp_settings_load_flow_param(dspfBiamp, "chan_sel", &val_bi_chan);
+	cJSON_AddNumberToObject(biamp, "chan_sel" , val_bi_chan);
+
+
 	cJSON *biamp_params = cJSON_CreateArray();
 
 	cJSON *bip1 = cJSON_CreateObject();
@@ -445,6 +465,8 @@ esp_err_t dsp_settings_get_json(char *json_out, size_t max_len) {
 
 	cJSON_AddItemToObject(biamp, "parameters", biamp_params);
 	cJSON_AddItemToArray(schema, biamp);
+	
+	
 
 	cJSON_AddItemToObject(root, "flows", schema);
 
@@ -503,6 +525,7 @@ esp_err_t dsp_settings_set_from_json(const char *json_in) {
 	// Expecting keys like "flow_5_fc_1", "flow_5_gain_1", etc.
 	cJSON *item = NULL;
 	cJSON_ArrayForEach(item, root) {
+		ESP_LOGW(TAG, "Json iteration:  %s", item->string);
 		if (cJSON_IsNumber(item) && item->string) {
 			// Parse key format: "flow_X_param"
 			if (strncmp(item->string, "flow_", 5) == 0) {
@@ -572,6 +595,11 @@ esp_err_t dsp_settings_get_flow_params(dspFlows_t flow,
 	} else {
 		params->gain_3 = DSP_GAIN_DEFAULT;
 	}
+	if(dsp_settings_load_flow_param(flow, "chan_sel", &v) ==ESP_OK){
+		params->chan_sel = (int)v;
+	} else{
+		params->chan_sel = DSP_CHANEL_SELECT_DEFAULT;
+	}
 
 	return ESP_OK;
 }
@@ -585,8 +613,8 @@ esp_err_t dsp_settings_set_flow_params(dspFlows_t flow,
 		return ESP_ERR_INVALID_ARG;
 	}
 
-	ESP_LOGI(TAG, "Setting params for flow %d: fc_1=%.1f gain_1=%.1f fc_3=%.1f gain_3=%.1f", 
-			 flow, params->fc_1, params->gain_1, params->fc_3, params->gain_3);
+	ESP_LOGI(TAG, "Setting params for flow %d: fc_1=%.1f gain_1=%.1f fc_3=%.1f gain_3=%.1f chan_sel=%d", 
+			 flow, params->fc_1, params->gain_1, params->fc_3, params->gain_3, params->chan_sel);
 
 	// Save to NVS
 	esp_err_t err = ESP_OK;
@@ -596,6 +624,8 @@ esp_err_t dsp_settings_set_flow_params(dspFlows_t flow,
 	err |= dsp_settings_save_flow_param(flow, "fc_3", (int32_t)params->fc_3);
 	err |=
 		dsp_settings_save_flow_param(flow, "gain_3", (int32_t)params->gain_3);
+	err |=
+	    dsp_settings_save_flow_param(flow, "chan_sel", (int32_t) params->chan_sel);	
 	if (err == ESP_OK) {
 		// If the flow we just saved is currently active, apply it to the
 		// DSP processor. Read active flow from NVS on demand.

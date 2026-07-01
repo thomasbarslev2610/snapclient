@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WiFi Settings</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="index.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 20px auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .settings-container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .setting-control {
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .setting-control label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #333;
+      font-size: 16px;
+    }
+
+    .setting-control .description {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 15px;
+      font-style: italic;
+    }
+
+    .setting-control input[type="text"],
+    .setting-control input[type="password"] {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+      transition: border-color 0.3s;
+    }
+
+    .setting-control input:focus {
+      outline: none;
+      border-color: #007bff;
+      box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+    }
+
+    .password-wrapper {
+      position: relative;
+    }
+
+    .password-wrapper input {
+      padding-right: 80px;
+    }
+
+    .toggle-pwd {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: #007bff;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 4px 6px;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      font-size: 14px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    .btn-primary {
+      background-color: #007bff;
+      color: white;
+    }
+
+    .btn-primary:hover { background-color: #0056b3; }
+    .btn-primary:disabled { background-color: #6c757d; cursor: not-allowed; }
+
+    .btn-danger {
+      background-color: #e74c3c;
+      color: white;
+    }
+
+    .btn-danger:hover { background-color: #c0392b; }
+    .btn-danger:disabled { background-color: #6c757d; cursor: not-allowed; }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+
+    .alert-ap {
+      background-color: #fff3cd;
+      color: #856404;
+      padding: 15px 20px;
+      border-radius: 8px;
+      border-left: 4px solid #ffc107;
+      margin-bottom: 20px;
+    }
+
+    .alert-ap strong { display: block; margin-bottom: 6px; font-size: 15px; }
+
+    .alert-connected {
+      background-color: #d4edda;
+      color: #155724;
+      padding: 15px 20px;
+      border-radius: 8px;
+      border-left: 4px solid #28a745;
+      margin-bottom: 20px;
+    }
+
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+
+    .info {
+      background-color: #d1ecf1;
+      color: #0c5460;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 10px 0;
+      font-size: 14px;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: bold;
+      margin-left: 8px;
+    }
+
+    .badge-ap { background-color: #ffc107; color: #333; }
+    .badge-sta { background-color: #28a745; color: white; }
+  </style>
+</head>
+<body>
+  <h1>WiFi Settings</h1>
+
+  <div id="app">
+    <div class="loading">Loading WiFi status...</div>
+  </div>
+
+  <script>
+    'use strict';
+
+    let currentMode = 'sta';
+    let savedSsid = '';
+    let isDirty = false;
+    let savedOk = false;
+
+    async function loadStatus() {
+      const app = document.getElementById('app');
+      try {
+        const resp = await fetch('/api/wifi/status');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const status = await resp.json();
+        currentMode = status.mode || 'sta';
+        savedSsid = status.ssid || '';
+        renderUI(status);
+      } catch (err) {
+        app.innerHTML = '<div class="error">Failed to load WiFi status: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    function renderUI(status) {
+      const app = document.getElementById('app');
+      let html = '';
+
+      // Status banner
+      if (status.mode === 'ap') {
+        html += '<div class="alert-ap">';
+        html += '<strong>Device is in Access Point mode <span class="status-badge badge-ap">AP</span></strong>';
+        html += 'The device could not connect to WiFi and started its own access point.<br>';
+        html += 'AP SSID: <strong>' + escapeHtml(status.ap_ssid || '') + '</strong><br>';
+        html += 'Enter your WiFi credentials below and click <em>Save &amp; Restart</em>.';
+        html += '</div>';
+      } else {
+        html += '<div class="alert-connected">';
+        html += '<strong>WiFi Station mode <span class="status-badge badge-sta">STA</span></strong>';
+        if (status.ssid) {
+          html += 'Configured SSID: <strong>' + escapeHtml(status.ssid) + '</strong>. ';
+        }
+        html += 'You can update the credentials below.';
+        html += '</div>';
+      }
+
+      // Credentials form
+      html += '<div class="settings-container">';
+      html += '<div class="setting-control">';
+      html += '<label for="wifi-ssid">WiFi SSID</label>';
+      html += '<div class="description">The name of the WiFi network to connect to.</div>';
+      html += '<input type="text" id="wifi-ssid" value="' + escapeHtml(savedSsid) + '" maxlength="32" placeholder="Your WiFi network name" oninput="handleChange()">';
+      html += '</div>';
+
+      html += '<div class="setting-control">';
+      html += '<label for="wifi-password">WiFi Password</label>';
+      html += '<div class="description">Leave empty to keep the existing password, or enter a new one.</div>';
+      html += '<div class="password-wrapper">';
+      html += '<input type="password" id="wifi-password" value="" maxlength="64" placeholder="Enter password (leave empty to keep current)" oninput="handleChange()">';
+      html += '<button class="toggle-pwd" type="button" onclick="togglePwd()">Show</button>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div class="setting-control">';
+      html += '<div class="button-group">';
+      html += '<button class="btn btn-primary" id="save-btn" onclick="saveCredentials()" disabled>Save Credentials</button>';
+      html += '<button class="btn btn-danger" id="restart-btn" onclick="requestRestart()" disabled>Restart Device</button>';
+      html += '</div>';
+      html += '<div id="msg-area"></div>';
+      html += '</div>';
+
+      html += '<div class="info">';
+      html += '<strong>Note:</strong> After saving, restart the device so it can connect using the new credentials. ';
+      html += 'If the connection fails again, the device will restart in AP mode.';
+      html += '</div>';
+      html += '</div>';
+
+      app.innerHTML = html;
+    }
+
+    function handleChange() {
+      isDirty = true;
+      document.getElementById('save-btn').disabled = false;
+    }
+
+    function togglePwd() {
+      const input = document.getElementById('wifi-password');
+      const btn = input.parentElement.querySelector('.toggle-pwd');
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = 'Hide';
+      } else {
+        input.type = 'password';
+        btn.textContent = 'Show';
+      }
+    }
+
+    async function saveCredentials() {
+      const saveBtn = document.getElementById('save-btn');
+      const msgArea = document.getElementById('msg-area');
+      const ssid = document.getElementById('wifi-ssid').value.trim();
+      const password = document.getElementById('wifi-password').value;
+
+      if (!ssid) {
+        msgArea.innerHTML = '<div class="error">SSID cannot be empty.</div>';
+        return;
+      }
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+      msgArea.innerHTML = '';
+
+      try {
+        const ssidOk = await setParameter('wifi_ssid', ssid);
+        if (!ssidOk) throw new Error('Failed to save SSID');
+
+        // Only save password if user entered one
+        if (password.length > 0) {
+          const pwdOk = await setParameter('wifi_password', password);
+          if (!pwdOk) throw new Error('Failed to save password');
+        }
+
+        savedSsid = ssid;
+        savedOk = true;
+        isDirty = false;
+        saveBtn.textContent = 'Saved!';
+        document.getElementById('restart-btn').disabled = false;
+        msgArea.innerHTML = '<div class="success">Credentials saved. Click <strong>Restart Device</strong> to apply.</div>';
+      } catch (err) {
+        msgArea.innerHTML = '<div class="error">' + escapeHtml(err.message) + '</div>';
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Credentials';
+      }
+    }
+
+    function requestRestart() {
+      if (!confirm('Restart the device now? It will try to connect to the new WiFi network.')) return;
+      fetch('/restart', { method: 'POST' })
+        .then(r => {
+          if (r.ok) {
+            document.getElementById('msg-area').innerHTML =
+              '<div class="success">Device is restarting&hellip;</div>';
+          } else {
+            alert('Restart request failed');
+          }
+        })
+        .catch(() => alert('Restart request failed'));
+    }
+
+    function escapeHtml(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    document.addEventListener('DOMContentLoaded', loadStatus);
+  </script>
+</body>
+</html>

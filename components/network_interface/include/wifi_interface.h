@@ -20,5 +20,7 @@
 
 bool wifi_get_ip(esp_netif_ip_info_t *ip);
 void wifi_start(void);
+bool wifi_is_ap_mode(void);
+void wifi_get_ap_ssid(char *ssid_out, size_t max_len);
 
 #endif /* _WIFI_INTERFACE_H_ */

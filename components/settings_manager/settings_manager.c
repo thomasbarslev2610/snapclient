@@ -21,6 +21,10 @@ static const char *NVS_KEY_HOSTNAME = "hostname";
 static const char *NVS_KEY_MDNS = "mdns";        // int32 0/1
 static const char *NVS_KEY_SERVER_HOST = "server_host"; // string
 static const char *NVS_KEY_SERVER_PORT = "server_port"; // int32
+static const char *NVS_KEY_WIFI_SSID = "wifi_ssid";    // string
+static const char *NVS_KEY_WIFI_PSWD = "wifi_pswd";    // string
+static const char *NVS_KEY_RELAY_GPIO = "relay_gpio";  // int32
+static const char *NVS_KEY_RELAY_TOUT = "relay_tout";  // int32 (seconds)
 
 // Mutex for thread-safe NVS access
 static SemaphoreHandle_t hostname_mutex = NULL;
@@ -504,6 +508,15 @@ esp_err_t settings_get_json(char *json_out, size_t max_len) {
         cJSON_AddNumberToObject(root, "server_port", port);
     }
 
+    // Relay / activity settings
+    int32_t relay_gpio = -1;
+    settings_get_relay_gpio(&relay_gpio);
+    cJSON_AddNumberToObject(root, "relay_gpio", relay_gpio);
+
+    int32_t relay_timeout_s = 5;
+    settings_get_relay_timeout_s(&relay_timeout_s);
+    cJSON_AddNumberToObject(root, "relay_timeout_s", relay_timeout_s);
+
     // Add DSP availability flag
 #if CONFIG_USE_DSP_PROCESSOR
     cJSON_AddBoolToObject(root, "dsp_available", true);
@@ -546,6 +559,152 @@ esp_err_t settings_get_json(char *json_out, size_t max_len) {
 
     ESP_LOGV(TAG, "%s: JSON generated: %s", __func__, json_out);
     return ESP_OK;
+}
+
+/* --- Relay / activity helper ------------------------------------------ */
+
+static esp_err_t nvs_get_i32_default(const char *key, int32_t *out, int32_t def) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
+    if (err == ESP_OK) {
+        err = nvs_get_i32(h, key, out);
+        nvs_close(h);
+        if (err == ESP_OK) return ESP_OK;
+    }
+    *out = def;
+    return ESP_OK;
+}
+
+static esp_err_t nvs_set_i32_commit(const char *key, int32_t val) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+    err = nvs_set_i32(h, key, val);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t settings_get_relay_gpio(int32_t *gpio) {
+    if (!gpio) return ESP_ERR_INVALID_ARG;
+    if (!hostname_mutex) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(hostname_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    esp_err_t err = nvs_get_i32_default(NVS_KEY_RELAY_GPIO, gpio, -1);
+    xSemaphoreGive(hostname_mutex);
+    return err;
+}
+
+esp_err_t settings_set_relay_gpio(int32_t gpio) {
+    if (!hostname_mutex) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(hostname_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    esp_err_t err = nvs_set_i32_commit(NVS_KEY_RELAY_GPIO, gpio);
+    xSemaphoreGive(hostname_mutex);
+    if (err == ESP_OK) ESP_LOGI(TAG, "%s: relay_gpio=%ld", __func__, (long)gpio);
+    return err;
+}
+
+esp_err_t settings_get_relay_timeout_s(int32_t *timeout_s) {
+    if (!timeout_s) return ESP_ERR_INVALID_ARG;
+    if (!hostname_mutex) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(hostname_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    esp_err_t err = nvs_get_i32_default(NVS_KEY_RELAY_TOUT, timeout_s, 5);
+    xSemaphoreGive(hostname_mutex);
+    return err;
+}
+
+esp_err_t settings_set_relay_timeout_s(int32_t timeout_s) {
+    if (!hostname_mutex) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(hostname_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    esp_err_t err = nvs_set_i32_commit(NVS_KEY_RELAY_TOUT, timeout_s);
+    xSemaphoreGive(hostname_mutex);
+    if (err == ESP_OK) ESP_LOGI(TAG, "%s: relay_timeout=%lds", __func__, (long)timeout_s);
+    return err;
+}
+
+esp_err_t settings_get_wifi_ssid(char *ssid, size_t max_len) {
+    if (!ssid || max_len == 0) return ESP_ERR_INVALID_ARG;
+    if (!hostname_mutex) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(hostname_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
+    if (err == ESP_OK) {
+        size_t required = max_len;
+        err = nvs_get_str(h, NVS_KEY_WIFI_SSID, ssid, &required);
+        nvs_close(h);
+        if (err == ESP_OK) {
+            xSemaphoreGive(hostname_mutex);
+            return ESP_OK;
+        }
+    }
+    ssid[0] = '\0';
+    xSemaphoreGive(hostname_mutex);
+    return ESP_OK;
+}
+
+esp_err_t settings_set_wifi_ssid(const char *ssid) {
+    if (!hostname_mutex) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(hostname_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) { xSemaphoreGive(hostname_mutex); return err; }
+
+    if (!ssid || ssid[0] == '\0') {
+        err = nvs_erase_key(h, NVS_KEY_WIFI_SSID);
+        if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    } else {
+        err = nvs_set_str(h, NVS_KEY_WIFI_SSID, ssid);
+    }
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    xSemaphoreGive(hostname_mutex);
+    if (err == ESP_OK) ESP_LOGI(TAG, "%s: wifi_ssid saved: %s", __func__, ssid ? ssid : "(cleared)");
+    else ESP_LOGE(TAG, "%s: failed: %s", __func__, esp_err_to_name(err));
+    return err;
+}
+
+esp_err_t settings_get_wifi_password(char *password, size_t max_len) {
+    if (!password || max_len == 0) return ESP_ERR_INVALID_ARG;
+    if (!hostname_mutex) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(hostname_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
+    if (err == ESP_OK) {
+        size_t required = max_len;
+        err = nvs_get_str(h, NVS_KEY_WIFI_PSWD, password, &required);
+        nvs_close(h);
+        if (err == ESP_OK) {
+            xSemaphoreGive(hostname_mutex);
+            return ESP_OK;
+        }
+    }
+    password[0] = '\0';
+    xSemaphoreGive(hostname_mutex);
+    return ESP_OK;
+}
+
+esp_err_t settings_set_wifi_password(const char *password) {
+    if (!hostname_mutex) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(hostname_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) { xSemaphoreGive(hostname_mutex); return err; }
+
+    if (!password || password[0] == '\0') {
+        err = nvs_erase_key(h, NVS_KEY_WIFI_PSWD);
+        if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    } else {
+        err = nvs_set_str(h, NVS_KEY_WIFI_PSWD, password);
+    }
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    xSemaphoreGive(hostname_mutex);
+    if (err == ESP_OK) ESP_LOGI(TAG, "%s: wifi_pswd saved", __func__);
+    else ESP_LOGE(TAG, "%s: failed: %s", __func__, esp_err_to_name(err));
+    return err;
 }
 
 esp_err_t settings_set_from_json(const char *json_in) {

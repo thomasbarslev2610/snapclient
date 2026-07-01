@@ -62,6 +62,7 @@
 #if CONFIG_DAC_TAS5805M
 #include "tas5805m_settings.h"
 #endif
+#include "activitytimer.h"
 
 static bool isCachedChunk = false;
 static uint32_t cachedBlocks = 0;
@@ -1336,6 +1337,14 @@ static void dac_control_task(audio_board_handle_t board_handle,
                                AUDIO_HAL_CTRL_STOP);
         }
       }
+
+      /* Notify activity timer whenever playing state changes */
+      bool playing_now  = dac_data.enabled && !dac_data.mute;
+      bool playing_prev = dac_data_old.enabled && !dac_data_old.mute;
+      if (playing_now != playing_prev) {
+        activitytimer_notify_playing(playing_now);
+      }
+
       dac_data_old = dac_data;
     }
   }
@@ -1515,6 +1524,7 @@ void app_main(void) {
 
   // Initialize settings manager (hostname + snapserver settings)
   settings_manager_init();
+  activitytimer_init();
   
   // Get hostname for mDNS
   char mdns_hostname[64] = {0};

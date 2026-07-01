@@ -49,6 +49,8 @@ extern "C" {
 #define DSP_CROSSOVER_FREQ_DEFAULT   500.0f
 #define DSP_CROSSOVER_FREQ_STEP       10.0f
 
+#define DSP_CHANEL_SELECT_DEFAULT 0
+
 /**
  * DSP Flow types - different audio processing modes
  */
@@ -72,6 +74,7 @@ typedef struct filterParams_s {
   float gain_1;        // Primary gain (bass/boost) in dB
   float fc_3;          // Tertiary frequency (treble/high crossover) in Hz
   float gain_3;        // Tertiary gain (treble) in dB
+  int chan_sel;
 } filterParams_t;
 
 /**

@@ -154,6 +154,7 @@
 
     let capabilities = null;
     let currentFlow = null;
+    
 
     // Fetch DSP settings from the device
     async function loadCapabilities() {
@@ -220,7 +221,7 @@
       }
 
       container.innerHTML = '';
-
+      
       // Create controls for each parameter
       for (const param of selectedFlow.parameters) {
         const value = param.current !== undefined ? param.current : param.default;
@@ -228,7 +229,7 @@
         const controlDiv = document.createElement('div');
         controlDiv.className = 'parameter-control';
         
-        let html = '<div class="param-info">';
+       let html = '<div class="param-info">'; 
         html += `<span class="param-name">${param.name}</span>`;
         html += `<span class="param-value" id="${param.key}-value">${value.toFixed(1)} ${param.unit}</span>`;
         html += '</div>';
@@ -246,17 +247,50 @@
         html += `<span>${param.min} ${param.unit}</span>`;
         html += `<span>${param.max} ${param.unit}</span>`;
         html += '</div>';
+       
         
+       
         controlDiv.innerHTML = html;
         container.appendChild(controlDiv);
       }
+        let selectedChannel = selectedFlow.chan_sel;
+        console.log(selectedChannel);
+
+      
+        
+
+
+
+        let html2 = '<div class="param-info">';
+        const channelDiv = document.createElement('div');
+        channelDiv.className = 'channel-selector';
+        html2 += '<div class="channel-selector">';
+        html2 += '<label for="chan_sel">Channel:</label>';
+        html2 += '<select id="chan_sel" onchange="handleParameterChange(this.id,this.value)">';
+        html2 += `<option value=0>Stereo</option>`;
+        html2 += `<option value=1>Mono Sum</option>`;
+        html2 += `<option value=2>Left Channel</option>`;
+        html2 += `<option value=3>Right Channel</option>`;
+
+       
+        html2 += '</select>';
+        channelDiv.innerHTML = html2;
+        container.appendChild(channelDiv);
+
+        var channel = document.getElementById("chan_sel");
+        for (var i = 0; i < channel.options.length; i++) {
+          channel.options[i].defaultSelected = i == selectedChannel;
+        }
+       
     }
+        
 
     // Handle parameter value changes with debouncing
     // Debounce timers stored per parameter to avoid flooding the device
     const debounceTimers = {};
     
     function handleParameterChange(paramKey, value, unit) {
+      console.log("handleParameterChange " + paramKey + " - " + value +" - " + unit);
       const valueSpan = document.getElementById(`${paramKey}-value`);
       if (valueSpan) {
         valueSpan.textContent = `${parseFloat(value).toFixed(1)} ${unit}`;
@@ -302,6 +336,11 @@
       // Re-render parameters for new flow
       renderParameters();
     }
+
+   
+    
+
+
 
     // Flush any pending debounced parameter updates before navigating away
     function flushPendingUpdates() {

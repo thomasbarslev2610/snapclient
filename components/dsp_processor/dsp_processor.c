@@ -3,11 +3,12 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/time.h>
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#if CONFIG_USE_DSP_PROCESSOR
+//#if CONFIG_USE_DSP_PROCESSOR
 #include "dsp_processor.h"
 #include "dsps_biquad.h"
 #include "dsps_biquad_gen.h"
@@ -31,6 +32,7 @@ typedef struct dsp_all_params_s {
     float gain_1;
     float fc_3;
     float gain_3;
+    int chan_sel;
   } flow_params[DSP_FLOW_COUNT];
 } dsp_all_params_t;
 
@@ -75,16 +77,18 @@ void dsp_processor_init(void) {
   all_params.flow_params[dspfEQBassTreble].gain_1 = DSP_GAIN_DEFAULT;
   all_params.flow_params[dspfEQBassTreble].fc_3 = DSP_TREBLE_FREQ_DEFAULT;
   all_params.flow_params[dspfEQBassTreble].gain_3 = DSP_GAIN_DEFAULT;
+  all_params.flow_params[dspfEQBassTreble].chan_sel = DSP_CHANEL_SELECT_DEFAULT;
   
   // Set defaults for dspfBassBoost
   all_params.flow_params[dspfBassBoost].fc_1 = DSP_BASS_FREQ_DEFAULT;
   all_params.flow_params[dspfBassBoost].gain_1 = DSP_BASSBOOST_GAIN_DEFAULT;
-  
+  all_params.flow_params[dspfBassBoost].chan_sel = DSP_CHANEL_SELECT_DEFAULT;
   // Set defaults for dspfBiamp
   all_params.flow_params[dspfBiamp].fc_1 = DSP_CROSSOVER_FREQ_DEFAULT;
   all_params.flow_params[dspfBiamp].gain_1 = DSP_GAIN_DEFAULT;
   all_params.flow_params[dspfBiamp].fc_3 = DSP_CROSSOVER_FREQ_DEFAULT;
   all_params.flow_params[dspfBiamp].gain_3 = DSP_GAIN_DEFAULT;
+  all_params.flow_params[dspfBiamp].chan_sel = DSP_CHANEL_SELECT_DEFAULT;
   
   // dspfStereo has no parameters (pass-through with volume only)
   // dspf2DOT1 and dspfFunkyHonda not yet implemented
@@ -107,10 +111,12 @@ void dsp_processor_init(void) {
       xSemaphoreTake(paramsChangedSemaphoreHandle, 10);
     }
   }
-  ESP_LOGI(TAG, "%s: Initialized with flow=%d, fc_1=%.1f, gain_1=%.1f", __func__,
+  ESP_LOGI(TAG, "%s: Initialized with flow=%d, fc_1=%.1f, gain_1=%.1f, channel=%d", __func__,
            all_params.active_flow, 
            all_params.flow_params[all_params.active_flow].fc_1,
-           all_params.flow_params[all_params.active_flow].gain_1);
+           all_params.flow_params[all_params.active_flow].gain_1,
+           all_params.flow_params[all_params.active_flow].chan_sel  
+          );
 
   ESP_LOGI(TAG, "%s: init done", __func__);
 }
@@ -158,6 +164,9 @@ esp_err_t dsp_processor_update_filter_params(filterParams_t *params) {
   
   // Update centralized storage for the current flow
   dspFlows_t flow = params->dspFlow;
+  
+
+
   if (flow >= 0 && flow < DSP_FLOW_COUNT) {  // Validate flow index
     // Acquire mutex once, update parameters and set the notification flag
     if (params_mutex && (xSemaphoreTake(params_mutex, portMAX_DELAY) == pdTRUE)) {
@@ -166,6 +175,10 @@ esp_err_t dsp_processor_update_filter_params(filterParams_t *params) {
       all_params.flow_params[flow].gain_1 = params->gain_1;
       all_params.flow_params[flow].fc_3 = params->fc_3;
       all_params.flow_params[flow].gain_3 = params->gain_3;
+      all_params.flow_params[flow].chan_sel = params->chan_sel;
+      biamp_lowpass_set_volume(params->gain_1);
+      biamp_highpass_set_volume(params->gain_3);
+      
       if (paramsChangedSemaphoreHandle) {
         xSemaphoreGive(paramsChangedSemaphoreHandle);
       }
@@ -178,9 +191,17 @@ esp_err_t dsp_processor_update_filter_params(filterParams_t *params) {
       all_params.flow_params[flow].gain_1 = params->gain_1;
       all_params.flow_params[flow].fc_3 = params->fc_3;
       all_params.flow_params[flow].gain_3 = params->gain_3;
+      all_params.flow_params[flow].chan_sel = params->chan_sel;
+      biamp_lowpass_set_volume(params->gain_1);
+      biamp_highpass_set_volume(params->gain_3);
+
       if (paramsChangedSemaphoreHandle) {
         xSemaphoreGive(paramsChangedSemaphoreHandle);
       }
+    
+    
+    
+    
     }
   }
   
@@ -303,6 +324,7 @@ int dsp_processor_worker(void *p_pcmChnk, const void *p_scSet) {
     currentFilterParams.gain_1 = all_params.flow_params[all_params.active_flow].gain_1;
     currentFilterParams.fc_3 = all_params.flow_params[all_params.active_flow].fc_3;
     currentFilterParams.gain_3 = all_params.flow_params[all_params.active_flow].gain_3;
+    currentFilterParams.chan_sel = all_params.flow_params[all_params.active_flow].chan_sel;
     paramsInitialized = true;
   }
 
@@ -321,6 +343,11 @@ int dsp_processor_worker(void *p_pcmChnk, const void *p_scSet) {
     currentFilterParams.gain_1 = all_params.flow_params[aflow].gain_1;
     currentFilterParams.fc_3 = all_params.flow_params[aflow].fc_3;
     currentFilterParams.gain_3 = all_params.flow_params[aflow].gain_3;
+    currentFilterParams.chan_sel = all_params.flow_params[aflow].chan_sel;
+    biamp_lowpass_set_volume(currentFilterParams.gain_1);
+    biamp_highpass_set_volume(currentFilterParams.gain_3);
+    
+    
     if (params_mutex) {
       xSemaphoreGive(params_mutex);
     } else {
@@ -353,6 +380,7 @@ int dsp_processor_worker(void *p_pcmChnk, const void *p_scSet) {
           float bass_gain = currentFilterParams.gain_1;
           float treble_fc = currentFilterParams.fc_3 / samplerate;
           float treble_gain = currentFilterParams.gain_3;
+
 
           // filters for CH 0
           filter[0] = (ptype_t){LOWSHELF, bass_fc, bass_gain,       0.707,
@@ -496,6 +524,46 @@ int dsp_processor_worker(void *p_pcmChnk, const void *p_scSet) {
       }
     }
 #endif
+  if (ch == 2) {
+    if(currentFilterParams.dspFlow != dspfStereo ) //stereo
+    {
+      if(currentFilterParams.chan_sel !=0) {
+
+        for (int k = 0; k < len; k += DSP_PROCESSOR_LEN) {
+          volatile uint32_t *tmp = (uint32_t *)(&audio_tmp[k]);
+          uint32_t max = DSP_PROCESSOR_LEN;
+          uint32_t test = len - k;
+
+          if (test < DSP_PROCESSOR_LEN) {
+            max = test;
+          }
+
+          for (i = 0; i < max; i++) {
+            int16_t channel0 = (int16_t)((tmp[i] & 0xFFFF0000) >> 16);
+            int16_t channel1 = (int16_t)(tmp[i] & 0x0000FFFF);
+            //int16_t mixMono = ((int32_t)channel0 + (int32_t)channel1) / 2;
+            int16_t mixMono = 0;
+            if(currentFilterParams.chan_sel == 1) //mono mix
+            {
+              mixMono = ((int32_t)channel0 + (int32_t)channel1) / 2;
+            }
+            if(currentFilterParams.chan_sel == 2) //left
+            {
+              mixMono = ((int32_t)channel1 );
+            }
+            if(currentFilterParams.chan_sel == 3) //right
+            {
+              mixMono = ((int32_t)channel0 );
+            }
+
+            tmp[i] = ((uint32_t)mixMono << 16) | ((uint32_t)mixMono & 0x0000FFFF);
+            
+          }
+        }
+      }
+    }
+  }
+
 
     switch (dspFlow) {
       case dspfEQBassTreble: {
@@ -628,8 +696,12 @@ int dsp_processor_worker(void *p_pcmChnk, const void *p_scSet) {
           // Process audio ch0 LOW PASS FILTER
           for (i = 0; i < max; i++) {
             sbuffer0[i] =
-                dynamic_vol * ((float)((int16_t)(tmp[i] & 0xFFFF))) / INT16_MAX;
+              (dynamic_vol * 
+                ((float)((int16_t)
+                  (tmp[i] & 0xFFFF))) / INT16_MAX) * biamp_lowpass_volume;
+
           }
+
           dsps_biquad_f32(sbuffer0, sbufout0, max, filter[0].coeffs, filter[0].w);
           dsps_biquad_f32(sbufout0, sbuffer0, max, filter[1].coeffs, filter[1].w);
 
@@ -640,9 +712,11 @@ int dsp_processor_worker(void *p_pcmChnk, const void *p_scSet) {
 
           // Process audio ch1 HIGH PASS FILTER
           for (i = 0; i < max; i++) {
-            sbuffer0[i] = dynamic_vol *
-                          ((float)((int16_t)((tmp[i] & 0xFFFF0000) >> 16))) /
-                          INT16_MAX;
+            sbuffer0[i] = 
+              (dynamic_vol *
+                ((float)((int16_t)
+                    ((tmp[i] & 0xFFFF0000) >> 16))) / INT16_MAX) * biamp_highpass_volume;
+                    
           }
           dsps_biquad_f32(sbuffer0, sbufout0, max, filter[2].coeffs, filter[2].w);
           dsps_biquad_f32(sbufout0, sbuffer0, max, filter[3].coeffs, filter[3].w);
@@ -814,6 +888,7 @@ esp_err_t dsp_processor_set_params_for_flow(dspFlows_t flow, const filterParams_
   all_params.flow_params[flow].gain_1 = params->gain_1;
   all_params.flow_params[flow].fc_3 = params->fc_3;
   all_params.flow_params[flow].gain_3 = params->gain_3;
+  all_params.flow_params[flow].chan_sel = params->chan_sel;
   if (params_mutex) {
     xSemaphoreGive(params_mutex);
   } else {
@@ -841,9 +916,12 @@ esp_err_t dsp_processor_set_params_for_flow(dspFlows_t flow, const filterParams_
     temp_params.gain_1 = params->gain_1;
     temp_params.fc_3 = params->fc_3;
     temp_params.gain_3 = params->gain_3;
-    
+    temp_params.chan_sel = params->chan_sel;
+    biamp_lowpass_set_volume(params->gain_1);
+    biamp_highpass_set_volume(params->gain_3);
     return dsp_processor_update_filter_params(&temp_params);
   }
+  
   
   return ESP_OK;
 }
@@ -872,6 +950,8 @@ esp_err_t dsp_processor_switch_flow(dspFlows_t flow) {
   params.gain_1 = all_params.flow_params[flow].gain_1;
   params.fc_3 = all_params.flow_params[flow].fc_3;
   params.gain_3 = all_params.flow_params[flow].gain_3;
+  params.chan_sel = all_params.flow_params[flow].chan_sel;
+
   if (params_mutex) {
     xSemaphoreGive(params_mutex);
   } else {
@@ -881,4 +961,19 @@ esp_err_t dsp_processor_switch_flow(dspFlows_t flow) {
   return dsp_processor_update_filter_params(&params);
 }
 
-#endif
+
+void biamp_lowpass_set_volume(float gain)
+{
+  biamp_lowpass_volume = sqrtf(pow(10, gain / 20.0));
+  ESP_LOGI(TAG, "%s: setting lowpass volume: %f , from gain: %f", __func__, biamp_lowpass_volume, gain);
+}
+void biamp_highpass_set_volume(float gain)
+{
+  biamp_highpass_volume = sqrtf(pow(10, gain / 20.0));
+  ESP_LOGI(TAG, "%s: setting highpass volume: %f , from gain: %f", __func__, biamp_highpass_volume, gain);
+}
+
+
+
+
+//#endif
